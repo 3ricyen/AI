@@ -1,0 +1,1691 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <!-- Title is now set from gameConfig in the script -->
+        <title>Gift Catcher</title>
+
+        <!-- Load a festive Christmas font -->
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@400;700&display=swap"
+            rel="stylesheet"
+        />
+
+        <!-- Add Tone.js library for sound effects -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+
+        <style>
+            /* Basic reset and page setup */
+            body,
+            html {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                overflow: hidden; /* Prevent scrolling */
+                font-family: 'Mountains of Christmas', cursive;
+                background: transparent; /* Transparent background */
+                color: white;
+            }
+
+            /* The game canvas will be positioned by JavaScript */
+            #gameCanvas {
+                display: block;
+                background: transparent; /* Transparent canvas */
+                position: fixed;
+                top: 0;
+                left: 0;
+                z-index: -1;
+            }
+
+            /* Styles for the pop-up screens (start, game over, victory) */
+            .overlay {
+                width: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                text-align: center;
+                padding: 20px;
+                box-sizing: border-box;
+                /* Start hidden */
+                display: none;
+                height: 100%;
+            }
+
+            .overlay h1 {
+                font-size: 3.5rem;
+                margin: 0;
+            }
+
+            .overlay h2 {
+                font-size: 2rem;
+                margin: 10px 0 20px;
+            }
+
+            .overlay p {
+                font-size: 1.2rem;
+                max-width: 400px;
+            }
+
+            /* Festive button style */
+            .game-button {
+                font-family: 'Mountains of Christmas', cursive;
+                font-size: 1.25rem;
+                font-weight: 700;
+                padding: 14px 28px;
+                border: none;
+                border-radius: 1rem;
+                color: white;
+                cursor: pointer;
+                transition: background-color 0.2s ease; /* Updated transition */
+            }
+
+            .game-button:hover {
+                background: #e63946; /* Keep hover color change */
+                /* transform: translateY(-2px); */ /* Removed transform for flat style */
+                /* box-shadow: 0 8px #a4001c; */ /* Removed shadow for flat style */
+            }
+
+            .game-button:active {
+                /* transform: translateY(4px); */ /* Removed transform for flat style */
+                /* box-shadow: 0 2px #a4001c; */ /* Removed shadow for flat style */
+                background: #a4001c; /* Added active state color */
+            }
+
+            /* New style for button container */
+            .button-container {
+                display: flex;
+                gap: 20px; /* Space between buttons */
+                flex-wrap: wrap; /* Allow buttons to wrap on small screens */
+                justify-content: center;
+            }
+
+            /* Style for the loading message */
+            #loadingMessage {
+                font-size: 1.5rem;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- The canvas element where the game is drawn -->
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Start Screen -->
+        <div id="startScreen" class="overlay" style="display: flex;">
+            <h1
+                id="startTitle"
+                style="color: #fff; text-shadow: 0 0 10px #ff0000, 0 0 20px #ff0000;"
+            >
+                🎄 Gift Catcher 🎄
+            </h1>
+            <p id="startSubtitle">
+                Move your mouse or finger to catch the falling Christmas items in your cart.
+                <br />Collect items for a high score! Catching the Grinch costs you one life. If you
+                run out of lives, it's game over.
+            </p>
+            <p id="loadingMessage">Loading holiday cheer...</p>
+            <button id="startButton" class="game-button" style="display: none;">
+                Start Game
+            </button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameOverScreen" class="overlay">
+            <h1 id="gameOverTitle">Game Over!</h1>
+            <h2 id="finalScoreGO">Your Score: 0</h2>
+            <p id="gameOverSubtitle">Better luck next time! 🎅</p>
+            <div class="button-container">
+                <!-- Added wrapper for buttons -->
+                <button id="restartButtonGO" class="game-button">Play Again</button>
+                <button id="logScoreButton" class="game-button">Log Score</button>
+                <!-- New Button -->
+            </div>
+        </div>
+
+        <!-- Victory Screen (Hidden, but kept for DOM structure) -->
+        <div id="victoryScreen" class="overlay">
+            <h1 id="victoryTitle">Game Over! 🌟</h1>
+            <h2 id="victorySubtitle">Maximum Score Achieved!</h2>
+            <p id="victoryMessage">You're a Christmas champion! Well done!</p>
+            <div class="button-container">
+                <!-- Added wrapper for buttons -->
+                <button id="restartButtonWin" class="game-button">Play Again</button>
+                <button id="logScoreButtonWin" class="game-button">Log Score</button>
+                <!-- New Button for Win Screen -->
+            </div>
+        </div>
+
+        <script>
+            /*
+             * ========================================
+             * A. 遊戲核心與玩法要求
+             * ========================================
+             *
+             * 核心概念：
+             * 聖誕禮物接球遊戲，玩家需要用購物車接住從天而降的聖誕物品
+             *
+             * 核心玩法：
+             * - 桌面：移動滑鼠控制購物車左右移動
+             * - 行動裝置：手指觸控滑動控制購物車
+             *
+             * 遊戲規則：
+             * 1. 各種聖誕物品（鈴鐺、薑餅人、花圈、馴鹿, **新物品**, **格林奇**）會從螢幕上方隨機掉落
+             * 2. 用購物車接住掉落的物品可得分
+             * 3. 物品掉到螢幕底部未接住不會失去生命值。
+             * 4. 接住格林奇將失去一條生命。
+             * 5. **NEW RULE: The Grinch spawn rate increases every 20 points!**
+             * 6. **SOUND RULE: Only play sound on Catch Good Item, Catch Grinch, Start, and Game Over. No sound on missed item.**
+             *
+             * 得分方式：
+             * - 每接住一個物品得 1 分
+             *
+             * 遊戲成功定義：
+             * 無（遊戲為高分挑戰模式，只有失敗）
+             *
+             * 遊戲失敗定義：
+             * 生命值歸零（三次接住格林奇）
+             *
+             * 視覺風格：
+             * - 聖誕節主題配色（深藍紫漸層背景、紅色按鈕）
+             * - 下雪動畫效果
+             * - 使用 "Mountains of Christmas" 節慶字體
+             * - 使用 PNG 圖片作為遊戲物件
+             *
+             * ========================================
+             */
+
+            // ========================================
+            // C. 客製化結構要求 (Config Mandate) - v2.0 規範
+            // ========================================
+            // All customizable parameters are in this object
+            const gameConfig = {
+                /**
+                 * 1. TEXT - 所有使用者可見的文字內容
+                 */
+                text: {
+                    documentTitle: 'Gift Catcher',
+                    loading: '正在載入節慶氣氛...',
+                    loadingComplete: percentage => `載入中... ${percentage}%`,
+                    startTitle: '🎄 Christmas Catcher 🎄',
+                    startSubtitle:
+                        '移動滑鼠或手指來接住掉落的聖誕物品。收集物品獲得高分！接到格林奇會失去一條生命。如果生命用完就遊戲結束。',
+                    startButton: '開始遊戲',
+                    challengeSuccessTitle: '挑戰成功',
+                    challengeSuccessSubtitle: '做得好！你可以登錄分數！🎅',
+                    finalScorePrefix: '你的分數：',
+                    restartButton: '再玩一次',
+                    logScoreButton: '記錄分數',
+                    scoreLogged: '分數已記錄',
+                    challengeFailedTitle: '挑戰失敗',
+                    challengeFailedMessage: '需要獲得至少 {minScore} 分才能登錄分數。',
+                    scorePrefix: '分數：',
+                    // Floating message text
+                    catchHappy: '+1',
+                    catchOuch: '-1'
+                },
+
+                /**
+                 * 2. STYLES - 樣式設定（使用嵌套結構）- v2.0 規範
+                 */
+                styles: {
+                    final: {
+                        scoreColor: '#ffffff'
+                    },
+                    challengeSuccess: {
+                        titleColor: '#FFC800',
+                        subtitleColor: '#ffffff'
+                    },
+                    challengeFailed: {
+                        titleColor: '#ff0000',
+                        subtitleColor: '#ffffff'
+                    },
+                    // 分數系統
+                    score: {
+                        color: '#FFC800'
+                    },
+                    // 字體配置
+                    fonts: {
+                        family: 'Mountains of Christmas, cursive',
+                        sizes: {
+                            score: '36px'
+                        }
+                    },
+                    // 按鈕配置
+                    buttons: {
+                        primaryColor: '#FF3000',
+                        primaryTextColor: '#ffffff',
+                        secondaryColor: '#00AEFF',
+                        secondaryTextColor: '#ffffff'
+                    },
+                    // 遮罩層配置
+                    overlay: {
+                        backgroundColor: 'rgba(17, 24, 39, 0.8)'
+                    },
+                    // 浮動文字配置
+                    floatingText: {
+                        font: '700 20px "Mountains of Christmas", cursive',
+                        happyColor: '#00cc66',
+                        ouchColor: '#ff0000',
+                        duration: 500
+                    }
+                },
+
+                /**
+                 * 3. VISUALS - 圖片/圖示設定（不包含背景圖片）
+                 */
+                visuals: {
+                    cartSrc:
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/giftcatcher/Selt.png',
+                    // A. Good Items (Score Points)
+                    goodItemSources: [
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/giftcatcher/Gift1.png',
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/giftcatcher/Gift2.png',
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/giftcatcher/Gift3.png',
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/giftcatcher/Gift4.png',
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/giftcatcher/Gift5.png',
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/giftcatcher/Gift6.png',
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/giftcatcher/Gift7.png'
+                    ],
+                    // B. Bad Items (Lose Life)
+                    badItemSources: [
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/giftcatcher/Grinch.png'
+                    ],
+                    livesImgSrc:
+                        'https://assets.fevercdn.com/promotion/development/AI-Code/img/lives.png',
+                    placeholderUrl: (width, height, text) =>
+                        `https://placehold.co/${width}x${height}/cc0000/FFF?text=${text}`
+                },
+
+                /**
+                 * 4. GAMEPLAY - 遊戲邏輯參數（使用嵌套結構）- v2.0 規範
+                 */
+                gameplay: {
+                    // 音效開關
+                    soundEnabled: true,
+                    // 難度系統
+                    difficulty: {
+                        itemSpawnChance: 0.05,
+                        difficultyScoreInterval: 20,
+                        badItemChanceIncrement: 0.1,
+                        maxBadItemChance: 0.5,
+                        minItemSpeed: 2,
+                        maxItemSpeed: 6
+                    },
+
+                    // 佈局設定
+                    layout: {
+                        cartWidth: 100,
+                        cartHeight: 100,
+                        cartHitbox: {
+                            width: 80,
+                            height: 50,
+                            offsetY: 20
+                        },
+                        minItemSize: 40,
+                        maxItemSize: 60,
+                        cartBottomOffset: 110
+                    },
+
+                    // 分數登錄門檻
+                    minimumScoreToLog: 20
+                },
+
+                /**
+                 * 5. UI - UI組件配置 - v2.0 規範（新增必須屬性）
+                 */
+                ui: {
+                    // 生命值系統
+                    lives: {
+                        initialLives: 3,
+                        iconSize: 40,
+                        color: '#ff4d4d'
+                    },
+                    // 分數系統
+                    score: {
+                        fontSize: '36px',
+                        fontWeight: '700',
+                        xOffset: 20,
+                        yOffset: 50
+                    }
+                },
+
+                /**
+                 * 6. ANIMATIONS - 動畫效果設定 - v2.0 規範（新增必須屬性）
+                 */
+                animations: {
+                    // 扣血紅閃效果
+                    hitEffect: {
+                        duration: 250,
+                        color: '#ff0000'
+                    }
+                },
+
+                /**
+                 * 7. AUDIO - 音效設定（選填）
+                 * 混合模式：預設使用 Tone.js，上傳音檔後使用音檔
+                 */
+                audio: {
+                    start: {
+                        note: 'C4',
+                        duration: '8n',
+                        type: 'triangle',
+                        url: '',
+                        volume: 0.5
+                    },
+                    catchItem: {
+                        note: 'E5',
+                        duration: '16n',
+                        type: 'sine',
+                        url: '',
+                        volume: 0.5
+                    },
+                    catchGrinch: {
+                        note: 'A1',
+                        duration: '0.5',
+                        type: 'sawtooth',
+                        url: '',
+                        volume: 0.5
+                    },
+                    gameOver: {
+                        note: 'G2',
+                        duration: '4n',
+                        type: 'sawtooth',
+                        url: '',
+                        volume: 0.5
+                    }
+                },
+
+                /**
+                 * 8. SETTINGS - 功能設定（選填）
+                 */
+                settings: {
+                    useCustomAudio: false
+                }
+            };
+
+            // ========================================
+            // gameConfigMeta: Metadata Schema - v2.0 規範
+            // ========================================
+            const gameConfigMeta = {
+                text: {
+                    startTitle: {
+                        label: '開始畫面標題',
+                        type: 'string',
+                        maxLength: 40,
+                        category: '開始畫面'
+                    },
+                    startSubtitle: {
+                        label: '開始畫面說明文字',
+                        type: 'string',
+                        maxLength: 200,
+                        category: '開始畫面'
+                    },
+                    startButton: {
+                        label: '開始按鈕文字',
+                        type: 'string',
+                        maxLength: 20,
+                        category: '開始畫面'
+                    },
+                    challengeSuccessTitle: {
+                        label: '挑戰成功標題',
+                        type: 'string',
+                        maxLength: 40,
+                        category: '挑戰成功畫面'
+                    },
+                    challengeSuccessSubtitle: {
+                        label: '挑戰成功副標題',
+                        type: 'string',
+                        maxLength: 100,
+                        category: '挑戰成功畫面'
+                    },
+                    finalScorePrefix: {
+                        label: '分數標籤',
+                        type: 'string',
+                        maxLength: 20,
+                        category: '遊戲完成畫面'
+                    },
+                    restartButton: {
+                        label: '重新開始按鈕文字',
+                        type: 'string',
+                        maxLength: 20,
+                        category: '按鈕文字'
+                    },
+                    logScoreButton: {
+                        label: '記錄分數按鈕文字',
+                        type: 'string',
+                        maxLength: 20,
+                        category: '按鈕文字'
+                    },
+                    scoreLogged: {
+                        label: '分數已記錄訊息',
+                        type: 'string',
+                        maxLength: 30,
+                        category: '按鈕文字'
+                    },
+                    challengeFailedTitle: {
+                        label: '挑戰失敗標題',
+                        type: 'string',
+                        maxLength: 40,
+                        category: '挑戰失敗畫面'
+                    },
+                    challengeFailedMessage: {
+                        label: '挑戰失敗訊息',
+                        type: 'string',
+                        maxLength: 100,
+                        category: '挑戰失敗畫面'
+                    },
+                    scorePrefix: {
+                        label: '分數前綴文字',
+                        type: 'string',
+                        maxLength: 20,
+                        category: '遊戲內 UI'
+                    },
+                    catchHappy: {
+                        label: '接到禮物訊息',
+                        type: 'string',
+                        maxLength: 20,
+                        category: '遊戲內 UI'
+                    },
+                    catchOuch: {
+                        label: '接到怪物訊息',
+                        type: 'string',
+                        maxLength: 20,
+                        category: '遊戲內 UI'
+                    }
+                },
+                styles: {
+                    final: {
+                        scoreColor: {
+                            label: '最終分數文字顏色',
+                            type: 'color'
+                        }
+                    },
+                    challengeSuccess: {
+                        titleColor: {
+                            label: '挑戰成功標題顏色',
+                            type: 'color'
+                        },
+                        subtitleColor: {
+                            label: '挑戰成功副標題顏色',
+                            type: 'color'
+                        }
+                    },
+                    challengeFailed: {
+                        titleColor: {
+                            label: '挑戰失敗標題顏色',
+                            type: 'color'
+                        },
+                        subtitleColor: {
+                            label: '挑戰失敗副標題顏色',
+                            type: 'color'
+                        }
+                    },
+                    // 分數系統
+                    score: {
+                        color: {
+                            label: '分數文字顏色',
+                            type: 'color'
+                        }
+                    },
+                    buttons: {
+                        primaryColor: { label: '主要按鈕背景', type: 'color' },
+                        primaryTextColor: { label: '主要按鈕文字', type: 'color' },
+                        secondaryColor: { label: '次要按鈕背景', type: 'color' },
+                        secondaryTextColor: { label: '次要按鈕文字', type: 'color' }
+                    },
+                    overlay: {
+                        backgroundColor: {
+                            label: '遮罩層背景顏色',
+                            type: 'color',
+                            category: '遮罩層樣式'
+                        }
+                    },
+                    floatingText: {
+                        happyColor: {
+                            label: '接到禮物文字',
+                            type: 'color',
+                            category: '浮動文字'
+                        },
+                        ouchColor: {
+                            label: '接到怪物文字',
+                            type: 'color',
+                            category: '浮動文字'
+                        },
+                        duration: {
+                            label: '浮動文字持續時間',
+                            type: 'range',
+                            min: 200,
+                            max: 1000,
+                            step: 50,
+                            unit: 'ms',
+                            category: '浮動文字'
+                        }
+                    }
+                },
+
+                visuals: {
+                    cartSrc: { label: '接禮物籃子圖片', type: 'image' },
+                    goodItemSources: {
+                        label: '加分物品',
+                        type: 'image',
+                        multiple: true,
+                        minItems: 1,
+                        maxItems: 10
+                    },
+                    badItemSources: {
+                        label: '扣血物品',
+                        type: 'image',
+                        multiple: true,
+                        minItems: 1,
+                        maxItems: 5
+                    },
+                    livesImgSrc: { label: '生命圖案', type: 'image' }
+                },
+
+                gameplay: {
+                    soundEnabled: {
+                        label: '啟用音效',
+                        type: 'boolean',
+                        category: '功能開關',
+                        hidden: true
+                    },
+                    difficulty: {
+                        itemSpawnChance: {
+                            label: '物品生成機率',
+                            type: 'range',
+                            min: 0.005,
+                            max: 0.05,
+                            step: 0.005,
+                            category: '遊戲難度',
+                            hidden: true
+                        },
+                        badItemChanceIncrement: {
+                            label: '扣血物品機率增量',
+                            type: 'range',
+                            min: 0.01,
+                            max: 0.1,
+                            step: 0.01,
+                            category: '遊戲難度',
+                            hidden: true
+                        },
+                        maxBadItemChance: {
+                            label: '扣血物品最大機率',
+                            type: 'range',
+                            min: 0.1,
+                            max: 0.8,
+                            step: 0.1,
+                            category: '遊戲難度',
+                            hidden: true
+                        },
+                        maxItemSpeed: {
+                            label: '物品最大掉落速度',
+                            type: 'range',
+                            min: 3,
+                            max: 10,
+                            step: 0.5,
+                            unit: 'px/frame',
+                            category: '遊戲難度',
+                            hidden: true
+                        },
+                        difficultyScoreInterval: {
+                            label: '分數間隔增加難度',
+                            type: 'range',
+                            min: 10,
+                            max: 100,
+                            step: 5,
+                            category: '遊戲難度',
+                            hidden: true
+                        }
+                    },
+                    layout: {
+                        cartWidth: {
+                            label: '購物車寬度',
+                            type: 'range',
+                            min: 60,
+                            max: 150,
+                            step: 10,
+                            unit: 'px',
+                            category: '物件尺寸',
+                            hidden: true
+                        },
+                        cartHeight: {
+                            label: '購物車高度',
+                            type: 'range',
+                            min: 60,
+                            max: 150,
+                            step: 10,
+                            unit: 'px',
+                            category: '物件尺寸',
+                            hidden: true
+                        },
+                        minItemSize: {
+                            label: '掉落物最小尺寸',
+                            type: 'range',
+                            min: 20,
+                            max: 60,
+                            step: 5,
+                            unit: 'px',
+                            category: '物件尺寸',
+                            hidden: true
+                        },
+                        maxItemSize: {
+                            label: '掉落物最大尺寸',
+                            type: 'range',
+                            min: 40,
+                            max: 100,
+                            step: 5,
+                            unit: 'px',
+                            category: '物件尺寸',
+                            hidden: true
+                        },
+                        cartBottomOffset: {
+                            label: '購物車距離底部距離',
+                            type: 'range',
+                            min: 80,
+                            max: 200,
+                            step: 10,
+                            unit: 'px',
+                            category: '遊戲設定',
+                            hidden: true
+                        }
+                    },
+                    minimumScoreToLog: {
+                        label: '過關分數',
+                        type: 'number',
+                        min: 0,
+                        max: 100,
+                        step: 1,
+                        category: '分數門檻'
+                    }
+                },
+
+                ui: {
+                    hidden: true,
+                    lives: {
+                        initialLives: {
+                            label: '初始生命值',
+                            type: 'range',
+                            min: 1,
+                            max: 10,
+                            step: 1,
+                            category: '生命值系統',
+                            hidden: true
+                        },
+                        iconSize: {
+                            label: '生命圖案尺寸',
+                            type: 'range',
+                            min: 20,
+                            max: 60,
+                            step: 5,
+                            unit: 'px',
+                            category: '生命值系統',
+                            hidden: true
+                        },
+                        color: {
+                            label: '生命值顏色',
+                            type: 'color',
+                            category: '生命值系統',
+                            hidden: true
+                        }
+                    },
+                    score: {
+                        fontSize: {
+                            label: '分數字體大小',
+                            type: 'string',
+                            category: '分數系統',
+                            hidden: true
+                        }
+                    }
+                },
+
+                animations: {
+                    hidden: true,
+                    hitEffect: {
+                        duration: {
+                            label: '命中效果持續時間',
+                            type: 'range',
+                            min: 100,
+                            max: 500,
+                            step: 50,
+                            unit: 'ms',
+                            category: '命中效果'
+                        },
+                        color: {
+                            label: '命中效果顏色',
+                            type: 'color',
+                            category: '命中效果'
+                        }
+                    }
+                },
+
+                audio: {
+                    hidden: true,
+                    start: {
+                        note: {
+                            label: '開始音符 (預設)',
+                            type: 'string',
+                            category: '音效設定 (Tone.js)',
+                            hidden: true
+                        },
+                        type: {
+                            label: '波形類型 (預設)',
+                            type: 'select',
+                            options: ['triangle', 'sine', 'square', 'sawtooth'],
+                            category: '音效設定 (Tone.js)',
+                            hidden: true
+                        },
+                        url: {
+                            label: '開始音效檔案 (選填，上傳後覆蓋預設)',
+                            type: 'file',
+                            category: '音效設定 (音檔上傳)',
+                            accept: 'audio/*',
+                            maxSizeMB: 2,
+                            dependsOn: { field: 'gameplay.soundEnabled', value: true },
+                            hidden: true
+                        },
+                        volume: {
+                            label: '音量',
+                            type: 'range',
+                            min: 0,
+                            max: 1,
+                            step: 0.1,
+                            category: '音效設定',
+                            hidden: true
+                        }
+                    },
+                    catchItem: {
+                        note: {
+                            label: '接住物品音符 (預設)',
+                            type: 'string',
+                            category: '音效設定 (Tone.js)',
+                            hidden: true
+                        },
+                        type: {
+                            label: '波形類型 (預設)',
+                            type: 'select',
+                            options: ['triangle', 'sine', 'square', 'sawtooth'],
+                            category: '音效設定 (Tone.js)',
+                            hidden: true
+                        },
+                        url: {
+                            label: '接住加分物品音效檔案 (選填)',
+                            type: 'file',
+                            category: '音效設定 (音檔上傳)',
+                            accept: 'audio/*',
+                            maxSizeMB: 2,
+                            dependsOn: { field: 'gameplay.soundEnabled', value: true },
+                            hidden: true
+                        },
+                        volume: {
+                            label: '音量',
+                            type: 'range',
+                            min: 0,
+                            max: 1,
+                            step: 0.1,
+                            category: '音效設定',
+                            hidden: true
+                        }
+                    },
+                    catchGrinch: {
+                        note: {
+                            label: '接住扣血物品音符 (預設)',
+                            type: 'string',
+                            category: '音效設定 (Tone.js)',
+                            hidden: true
+                        },
+                        type: {
+                            label: '波形類型 (預設)',
+                            type: 'select',
+                            options: ['triangle', 'sine', 'square', 'sawtooth'],
+                            category: '音效設定 (Tone.js)',
+                            hidden: true
+                        },
+                        url: {
+                            label: '接住扣血物品音效檔案 (選填)',
+                            type: 'file',
+                            category: '音效設定 (音檔上傳)',
+                            accept: 'audio/*',
+                            maxSizeMB: 2,
+                            dependsOn: { field: 'gameplay.soundEnabled', value: true }
+                        },
+                        volume: {
+                            label: '音量',
+                            type: 'range',
+                            min: 0,
+                            max: 1,
+                            step: 0.1,
+                            category: '音效設定',
+                            hidden: true
+                        }
+                    },
+                    gameOver: {
+                        note: {
+                            label: '遊戲結束音符 (預設)',
+                            type: 'string',
+                            category: '音效設定 (Tone.js)',
+                            hidden: true
+                        },
+                        type: {
+                            label: '波形類型 (預設)',
+                            type: 'select',
+                            options: ['triangle', 'sine', 'square', 'sawtooth'],
+                            category: '音效設定 (Tone.js)',
+                            hidden: true
+                        },
+                        url: {
+                            label: '遊戲結束音效檔案 (選填)',
+                            type: 'file',
+                            category: '音效設定 (音檔上傳)',
+                            accept: 'audio/*',
+                            maxSizeMB: 2,
+                            dependsOn: { field: 'gameplay.soundEnabled', value: true },
+                            hidden: true
+                        },
+                        volume: {
+                            label: '音量',
+                            type: 'range',
+                            min: 0,
+                            max: 1,
+                            step: 0.1,
+                            category: '音效設定',
+                            hidden: true
+                        }
+                    }
+                },
+
+                settings: {
+                    hidden: true,
+                    useCustomAudio: {
+                        label: '使用自訂音訊檔案',
+                        type: 'boolean',
+                        category: '功能開關',
+                        description: '啟用以使用上傳的音訊檔案，停用以使用 Tone.js 合成音效',
+                        hidden: true
+                    }
+                }
+            };
+
+            // ========================================
+            // D. 平台整合要求 (Platform Integration)
+            // ========================================
+
+            // Expose gameConfig and gameConfigMeta to global scope for platform access
+            window.gameConfig = gameConfig;
+            window.gameConfigMeta = gameConfigMeta;
+
+            // Track game start time for duration calculation
+            let gameStartTime = 0;
+
+            // --- Get Canvas and Context ---
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // --- Screen & Overlay Elements ---
+            const startScreen = document.getElementById('startScreen');
+            const gameOverScreen = document.getElementById('gameOverScreen');
+            const victoryScreen = document.getElementById('victoryScreen');
+            const startButton = document.getElementById('startButton');
+            const restartButtonGO = document.getElementById('restartButtonGO');
+            const restartButtonWin = document.getElementById('restartButtonWin');
+            const logScoreButton = document.getElementById('logScoreButton');
+            const logScoreButtonWin = document.getElementById('logScoreButtonWin');
+            const loadingMessage = document.getElementById('loadingMessage');
+            const finalScoreGO = document.getElementById('finalScoreGO');
+
+            // --- Tone.js Sound Synths (預設音效) ---
+            const catchSynth = new Tone.Synth().toDestination();
+            const gameSynth = new Tone.Synth().toDestination();
+            const grinchSynth = new Tone.Synth().toDestination();
+
+            // --- Audio Objects (使用者上傳的音檔) ---
+            let audioObjects = {
+                start: null,
+                catchItem: null,
+                catchGrinch: null,
+                gameOver: null
+            };
+
+            // --- Game State Variables ---
+            let score = 0;
+            let lives = gameConfig.ui.lives.initialLives;
+            let gameStarted = false;
+            let gameOver = false;
+            let gameWon = false;
+
+            // --- Difficulty Variables ---
+            let currentBadItemChance = 0;
+            let lastDifficultyIncreaseScore = 0;
+
+            // --- Visual Effect State ---
+            let hitEffectEnd = 0; // Timestamp when the red flash effect ends
+            let floatingMessage = null; // { text: string, color: string, end: number, x: number, y: number }
+
+            // --- Mobile Scaling ---
+            const mobileScaleFactor = 0.7;
+            const mobileBreakpoint = 768; // 手機裝置斷點（px）
+
+            /**
+             * 偵測是否為手機裝置
+             * @returns {boolean} 是否為手機裝置
+             */
+            const isMobileDevice = () => window.innerWidth <= mobileBreakpoint;
+
+            /**
+             * 取得縮放係數
+             * @returns {number} 縮放係數（手機為 0.6，桌面為 1）
+             */
+            const getScaleFactor = () => (isMobileDevice() ? mobileScaleFactor : 1);
+
+            /**
+             * 取得縮放後的購物車尺寸
+             * @returns {{ width: number, height: number }} 縮放後的購物車寬高
+             */
+            const getScaledCartSize = () => {
+                const scale = getScaleFactor();
+                return {
+                    width: gameConfig.gameplay.layout.cartWidth * scale,
+                    height: gameConfig.gameplay.layout.cartHeight * scale
+                };
+            };
+
+            /**
+             * 取得縮放後的掉落物尺寸範圍
+             * @returns {{ min: number, max: number }} 縮放後的最小和最大尺寸
+             */
+            const getScaledItemSize = () => {
+                const scale = getScaleFactor();
+                return {
+                    min: gameConfig.gameplay.layout.minItemSize * scale,
+                    max: gameConfig.gameplay.layout.maxItemSize * scale
+                };
+            };
+
+            // --- Game Objects ---
+            const initialCartSize = getScaledCartSize();
+            let cart = {
+                width: initialCartSize.width,
+                height: initialCartSize.height,
+                x: window.innerWidth / 2 - initialCartSize.width / 2,
+                y: window.innerHeight - gameConfig.gameplay.layout.cartBottomOffset,
+                hitbox: {
+                    width: gameConfig.gameplay.layout.cartHitbox.width * getScaleFactor(),
+                    height: gameConfig.gameplay.layout.cartHitbox.height * getScaleFactor(),
+                    offsetY: gameConfig.gameplay.layout.cartHitbox.offsetY * getScaleFactor()
+                }
+            };
+            let items = [];
+
+            // --- Image Loading ---
+            let cartImg = new Image();
+            let goodItemImages = [];
+            let badItemImages = [];
+            let livesImg = new Image();
+            let imagesLoaded = 0;
+            const totalImages =
+                gameConfig.visuals.goodItemSources.length +
+                gameConfig.visuals.badItemSources.length +
+                1 +
+                1;
+
+            // Function to preload all game images
+            function preloadImages() {
+                const onImageLoad = () => {
+                    imagesLoaded++;
+                    const percentage = Math.round((imagesLoaded / totalImages) * 100);
+                    loadingMessage.textContent = gameConfig.text.loadingComplete(percentage);
+                    if (imagesLoaded === totalImages) {
+                        loadingMessage.style.display = 'none';
+                        startButton.style.display = 'block';
+                    }
+                };
+
+                const onImageError = e => {
+                    console.warn(`Could not load image: ${e.target.src}. Using placeholder.`);
+                    const isCart = e.target.src === gameConfig.visuals.cartSrc;
+                    const isLives = e.target.src === gameConfig.visuals.livesImgSrc;
+                    const width = isCart
+                        ? gameConfig.gameplay.layout.cartWidth
+                        : isLives
+                        ? gameConfig.ui.lives.iconSize
+                        : gameConfig.gameplay.layout.minItemSize;
+                    const height = isCart
+                        ? gameConfig.gameplay.layout.cartHeight
+                        : isLives
+                        ? gameConfig.ui.lives.iconSize
+                        : gameConfig.gameplay.layout.minItemSize;
+                    const text = isCart ? 'Cart' : isLives ? 'Life' : 'Item';
+                    e.target.src = gameConfig.visuals.placeholderUrl(width, height, text);
+                    onImageLoad();
+                };
+
+                cartImg.src = gameConfig.visuals.cartSrc;
+                cartImg.onload = onImageLoad;
+                cartImg.onerror = onImageError;
+
+                // 載入加分物品圖片
+                gameConfig.visuals.goodItemSources.forEach(src => {
+                    const img = new Image();
+                    img.src = src;
+                    img.onload = onImageLoad;
+                    img.onerror = onImageError;
+                    goodItemImages.push(img);
+                });
+
+                // 載入扣血物品圖片
+                gameConfig.visuals.badItemSources.forEach(src => {
+                    const img = new Image();
+                    img.src = src;
+                    img.onload = onImageLoad;
+                    img.onerror = onImageError;
+                    badItemImages.push(img);
+                });
+
+                livesImg.src = gameConfig.visuals.livesImgSrc;
+                livesImg.onload = onImageLoad;
+                livesImg.onerror = onImageError;
+            }
+
+            // --- Canvas and Sizing ---
+            function resizeCanvas() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                cart.y = canvas.height - gameConfig.gameplay.layout.cartBottomOffset;
+
+                // 根據裝置類型更新購物車尺寸
+                const scaledCartSize = getScaledCartSize();
+                const scale = getScaleFactor();
+                cart.width = scaledCartSize.width;
+                cart.height = scaledCartSize.height;
+                cart.hitbox = {
+                    width: gameConfig.gameplay.layout.cartHitbox.width * scale,
+                    height: gameConfig.gameplay.layout.cartHitbox.height * scale,
+                    offsetY: gameConfig.gameplay.layout.cartHitbox.offsetY * scale
+                };
+
+                // 確保購物車不超出畫布邊界
+                if (cart.x + cart.width > canvas.width) {
+                    cart.x = canvas.width - cart.width;
+                }
+            }
+
+            function setupText() {
+                document.title = gameConfig.text.documentTitle;
+                loadingMessage.textContent = gameConfig.text.loading;
+
+                document.getElementById('startTitle').textContent = gameConfig.text.startTitle;
+                document.getElementById('startSubtitle').textContent =
+                    gameConfig.text.startSubtitle;
+                startButton.textContent = gameConfig.text.startButton;
+
+                document.getElementById('gameOverTitle').textContent =
+                    gameConfig.text.challengeSuccessTitle;
+                document.getElementById('gameOverTitle').style.color =
+                    gameConfig.styles.challengeSuccess.titleColor;
+                document.getElementById('gameOverSubtitle').textContent =
+                    gameConfig.text.challengeSuccessSubtitle;
+                document.getElementById('gameOverSubtitle').style.color =
+                    gameConfig.styles.challengeSuccess.subtitleColor;
+                restartButtonGO.textContent = gameConfig.text.restartButton;
+                logScoreButton.textContent = gameConfig.text.logScoreButton;
+
+                restartButtonWin.textContent = gameConfig.text.restartButton;
+                logScoreButtonWin.textContent = gameConfig.text.logScoreButton;
+            }
+
+            // Helper function to adjust color brightness
+            function adjustColorBrightness(color, percent) {
+                const num = parseInt(color.replace('#', ''), 16);
+                const r = Math.min(255, Math.max(0, (num >> 16) + percent));
+                const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00ff) + percent));
+                const b = Math.min(255, Math.max(0, (num & 0x0000ff) + percent));
+                return '#' + (0x1000000 + (r << 16) + (g << 8) + b).toString(16).slice(1);
+            }
+
+            function setupButtonStyles() {
+                const primaryButtons = [startButton, restartButtonGO, restartButtonWin];
+                const secondaryButtons = [logScoreButton, logScoreButtonWin];
+                const {
+                    primaryColor,
+                    primaryTextColor,
+                    secondaryColor,
+                    secondaryTextColor
+                } = gameConfig.styles.buttons;
+
+                // Auto-calculate hover and active colors
+                const primaryHoverColor = adjustColorBrightness(primaryColor, 20);
+                const primaryActiveColor = adjustColorBrightness(primaryColor, -20);
+                const secondaryHoverColor = adjustColorBrightness(secondaryColor, 20);
+                const secondaryActiveColor = adjustColorBrightness(secondaryColor, -20);
+
+                // Setup primary button styles
+                primaryButtons.forEach(button => {
+                    button.style.background = primaryColor;
+                    button.style.color = primaryTextColor;
+
+                    button.addEventListener('mouseenter', () => {
+                        button.style.background = primaryHoverColor;
+                    });
+                    button.addEventListener('mouseleave', () => {
+                        button.style.background = primaryColor;
+                    });
+                    button.addEventListener('mousedown', () => {
+                        button.style.background = primaryActiveColor;
+                    });
+                    button.addEventListener('mouseup', () => {
+                        button.style.background = primaryHoverColor;
+                    });
+                });
+
+                // Setup secondary button styles
+                secondaryButtons.forEach(button => {
+                    button.style.background = secondaryColor;
+                    button.style.color = secondaryTextColor;
+
+                    button.addEventListener('mouseenter', () => {
+                        button.style.background = secondaryHoverColor;
+                    });
+                    button.addEventListener('mouseleave', () => {
+                        button.style.background = secondaryColor;
+                    });
+                    button.addEventListener('mousedown', () => {
+                        button.style.background = secondaryActiveColor;
+                    });
+                    button.addEventListener('mouseup', () => {
+                        button.style.background = secondaryHoverColor;
+                    });
+                });
+            }
+
+            function setupOverlayStyles() {
+                const overlays = [startScreen, gameOverScreen, victoryScreen];
+                // Grab the full string directly
+                const { backgroundColor } = gameConfig.styles.overlay;
+
+                overlays.forEach(overlay => {
+                    // Apply it directly
+                    overlay.style.background = backgroundColor;
+                });
+            }
+
+            // --- Game Setup ---
+            function init() {
+                setupText();
+                setupButtonStyles();
+                setupOverlayStyles();
+                resizeCanvas();
+                window.addEventListener('resize', resizeCanvas);
+
+                window.addEventListener('mousemove', e => {
+                    moveCart(e.clientX);
+                });
+                window.addEventListener(
+                    'touchmove',
+                    e => {
+                        e.preventDefault();
+                        moveCart(e.touches[0].clientX);
+                    },
+                    { passive: false }
+                );
+
+                startButton.addEventListener('click', startGame);
+                restartButtonGO.addEventListener('click', startGame);
+                restartButtonWin.addEventListener('click', startGame);
+                logScoreButton.addEventListener('click', logScoreHandler);
+                logScoreButtonWin.addEventListener('click', logScoreHandler);
+
+                preloadImages();
+                setupAudio();
+            }
+
+            // 初始化音效（混合模式：優先使用用戶上傳的音檔，沒有則使用 Tone.js）
+            function setupAudio() {
+                // 設置 Tone.js synths
+                catchSynth.oscillator.type = gameConfig.audio.catchItem.type;
+                gameSynth.oscillator.type = gameConfig.audio.start.type;
+                grinchSynth.oscillator.type = gameConfig.audio.catchGrinch.type;
+
+                // 載入用戶上傳的音檔（如果有）
+                if (gameConfig.audio.start.url) {
+                    audioObjects.start = new Audio(gameConfig.audio.start.url);
+                    audioObjects.start.volume = gameConfig.audio.start.volume;
+                }
+                if (gameConfig.audio.catchItem.url) {
+                    audioObjects.catchItem = new Audio(gameConfig.audio.catchItem.url);
+                    audioObjects.catchItem.volume = gameConfig.audio.catchItem.volume;
+                }
+                if (gameConfig.audio.catchGrinch.url) {
+                    audioObjects.catchGrinch = new Audio(gameConfig.audio.catchGrinch.url);
+                    audioObjects.catchGrinch.volume = gameConfig.audio.catchGrinch.volume;
+                }
+                if (gameConfig.audio.gameOver.url) {
+                    audioObjects.gameOver = new Audio(gameConfig.audio.gameOver.url);
+                    audioObjects.gameOver.volume = gameConfig.audio.gameOver.volume;
+                }
+            }
+
+            // Play sound (hybrid mode: based on useCustomAudio setting, use either uploaded files or Tone.js)
+            function playSound(soundName) {
+                if (!gameConfig.gameplay.soundEnabled) return;
+
+                const audio = audioObjects[soundName];
+                const config = gameConfig.audio[soundName];
+
+                // Check useCustomAudio setting to determine audio source
+                if (gameConfig.gameplay.soundEnabled && audio && audio.src) {
+                    // Use uploaded custom audio file
+                    audio.currentTime = 0;
+                    audio.play().catch(e => {
+                        console.warn(`Failed to play ${soundName} sound:`, e);
+                    });
+                } else {
+                    // Use Tone.js synthesized sound
+                    Tone.start().then(() => {
+                        if (!config) return;
+
+                        if (soundName === 'start') {
+                            gameSynth.oscillator.type = config.type;
+                            gameSynth.triggerAttackRelease(
+                                config.note,
+                                config.duration,
+                                Tone.now()
+                            );
+                        } else if (soundName === 'catchItem') {
+                            catchSynth.triggerAttackRelease(
+                                config.note,
+                                config.duration,
+                                Tone.now()
+                            );
+                        } else if (soundName === 'catchGrinch') {
+                            grinchSynth.triggerAttackRelease(
+                                config.note,
+                                config.duration,
+                                Tone.now()
+                            );
+                        } else if (soundName === 'gameOver') {
+                            gameSynth.oscillator.type = config.type;
+                            gameSynth.triggerAttackRelease(
+                                config.note,
+                                config.duration,
+                                Tone.now()
+                            );
+                        }
+                    });
+                }
+            }
+
+            function logScoreHandler() {
+                const gameDuration = Date.now() - gameStartTime;
+                console.log(`[SUBMIT SCORE] Score: ${score}, Duration: ${gameDuration}ms`);
+
+                logScoreButton.disabled = true;
+                logScoreButton.textContent = gameConfig.text.scoreLogged;
+                logScoreButtonWin.disabled = true;
+                logScoreButtonWin.textContent = gameConfig.text.scoreLogged;
+
+                if (window.feverGame && typeof window.feverGame.onComplete === 'function') {
+                    try {
+                        window.feverGame.onComplete({
+                            score: score,
+                            duration: gameDuration,
+                            startTime: gameStartTime
+                        });
+                        console.log(
+                            `[FEVER GAME] Score logged: score=${score}, duration=${gameDuration}ms`
+                        );
+                    } catch (e) {
+                        console.error('[FEVER GAME] Failed to log score:', e);
+                        logScoreButton.disabled = false;
+                        logScoreButton.textContent = gameConfig.text.logScoreButton;
+                        logScoreButtonWin.disabled = false;
+                        logScoreButtonWin.textContent = gameConfig.text.logScoreButton;
+                    }
+                } else {
+                    console.log('[FEVER GAME] Platform API not available');
+                }
+            }
+
+            function startGame() {
+                score = 0;
+                lives = gameConfig.ui.lives.initialLives;
+                gameStarted = true;
+                gameOver = false;
+                gameWon = false;
+                items = [];
+                gameStartTime = Date.now();
+
+                // 計算初始扣血物品機率
+                const totalItemTypes = goodItemImages.length + badItemImages.length;
+                currentBadItemChance =
+                    totalItemTypes > 0 ? badItemImages.length / totalItemTypes : 0.1;
+                lastDifficultyIncreaseScore = 0;
+
+                // 重設視覺效果狀態
+                hitEffectEnd = 0;
+                floatingMessage = null;
+
+                startScreen.style.display = 'none';
+                gameOverScreen.style.display = 'none';
+                victoryScreen.style.display = 'none';
+
+                logScoreButton.disabled = false;
+                logScoreButton.textContent = gameConfig.text.logScoreButton;
+                logScoreButtonWin.disabled = false;
+                logScoreButtonWin.textContent = gameConfig.text.logScoreButton;
+
+                // 播放開始音效
+                playSound('start');
+
+                gameLoop();
+            }
+
+            function moveCart(x) {
+                if (!gameStarted) return;
+                cart.x = x - cart.width / 2;
+
+                if (cart.x < 0) cart.x = 0;
+                if (cart.x + cart.width > canvas.width) cart.x = canvas.width - cart.width;
+            }
+
+            function createItem() {
+                let randomImg;
+                let isBadItem = false;
+
+                // 根據機率決定是加分物品還是扣血物品
+                if (Math.random() < currentBadItemChance && badItemImages.length > 0) {
+                    // 選擇扣血物品
+                    const randomIndex = Math.floor(Math.random() * badItemImages.length);
+                    randomImg = badItemImages[randomIndex];
+                    isBadItem = true;
+                } else if (goodItemImages.length > 0) {
+                    // 選擇加分物品
+                    const randomIndex = Math.floor(Math.random() * goodItemImages.length);
+                    randomImg = goodItemImages[randomIndex];
+                    isBadItem = false;
+                } else {
+                    // 如果沒有加分物品，則選擇扣血物品
+                    const randomIndex = Math.floor(Math.random() * badItemImages.length);
+                    randomImg = badItemImages[randomIndex];
+                    isBadItem = true;
+                }
+
+                // 根據裝置類型取得縮放後的掉落物尺寸
+                const scaledSize = getScaledItemSize();
+                const itemSize = Math.random() * (scaledSize.max - scaledSize.min) + scaledSize.min;
+
+                items.push({
+                    x: Math.random() * (canvas.width - itemSize),
+                    y: -itemSize,
+                    width: itemSize,
+                    height: itemSize,
+                    speed:
+                        Math.random() *
+                            (gameConfig.gameplay.difficulty.maxItemSpeed -
+                                gameConfig.gameplay.difficulty.minItemSpeed) +
+                        gameConfig.gameplay.difficulty.minItemSpeed,
+                    img: randomImg,
+                    isBadItem: isBadItem
+                });
+            }
+
+            function update() {
+                if (!gameStarted || gameOver || gameWon) return;
+
+                if (
+                    score >=
+                    lastDifficultyIncreaseScore +
+                        gameConfig.gameplay.difficulty.difficultyScoreInterval
+                ) {
+                    lastDifficultyIncreaseScore = score;
+                    const increment = gameConfig.gameplay.difficulty.badItemChanceIncrement;
+                    const maxChance = gameConfig.gameplay.difficulty.maxBadItemChance;
+
+                    if (currentBadItemChance < maxChance) {
+                        currentBadItemChance += increment;
+                        if (currentBadItemChance > maxChance) {
+                            currentBadItemChance = maxChance;
+                        }
+                        console.log(
+                            `[Difficulty] Bad item chance increased to: ${currentBadItemChance.toFixed(
+                                3
+                            )} at score ${score}`
+                        );
+                    }
+                }
+
+                if (Math.random() < gameConfig.gameplay.difficulty.itemSpawnChance) {
+                    createItem();
+                }
+
+                for (let i = items.length - 1; i >= 0; i--) {
+                    const item = items[i];
+                    item.y += item.speed;
+
+                    const cartHitboxX = cart.x + (cart.width - cart.hitbox.width) / 2;
+                    const cartHitboxY = cart.y + cart.hitbox.offsetY;
+
+                    if (
+                        item.x < cartHitboxX + cart.hitbox.width &&
+                        item.x + item.width > cartHitboxX &&
+                        item.y < cartHitboxY + cart.hitbox.height &&
+                        item.y + item.height > cartHitboxY
+                    ) {
+                        if (item.isBadItem) {
+                            // 扣血物品
+                            lives--;
+
+                            const currentTime = Date.now();
+                            const floatingDuration = gameConfig.styles.floatingText.duration;
+
+                            // 觸發紅閃效果
+                            hitEffectEnd = currentTime + gameConfig.animations.hitEffect.duration;
+
+                            // 顯示 "哎喲！" 浮動文字
+                            floatingMessage = {
+                                text: gameConfig.text.catchOuch,
+                                color: gameConfig.styles.floatingText.ouchColor,
+                                end: currentTime + floatingDuration,
+                                x: item.x + item.width / 2,
+                                y: item.y
+                            };
+
+                            // 播放扣血音效
+                            playSound('catchGrinch');
+
+                            if (lives <= 0) {
+                                // 重設視覺效果狀態
+                                hitEffectEnd = 0;
+                                gameOver = true;
+                                gameStarted = false;
+                                finalScoreGO.textContent = gameConfig.text.finalScorePrefix + score;
+                                finalScoreGO.style.color = gameConfig.styles.final.scoreColor;
+                                // 檢查是否達到最低登錄分數
+                                const minScore = gameConfig.gameplay.minimumScoreToLog;
+                                const gameOverTitle = document.getElementById('gameOverTitle');
+                                const gameOverSubtitle = document.getElementById(
+                                    'gameOverSubtitle'
+                                );
+
+                                if (score >= minScore) {
+                                    // 達到最低分數，顯示挑戰成功畫面
+                                    gameOverTitle.textContent =
+                                        gameConfig.text.challengeSuccessTitle;
+                                    gameOverSubtitle.textContent =
+                                        gameConfig.text.challengeSuccessSubtitle;
+                                    gameOverSubtitle.style.color =
+                                        gameConfig.styles.challengeSuccess.subtitleColor;
+                                    logScoreButton.style.display = 'inline-block';
+                                } else {
+                                    // 未達到最低分數，顯示挑戰失敗畫面
+                                    gameOverTitle.textContent =
+                                        gameConfig.text.challengeFailedTitle;
+                                    gameOverSubtitle.textContent = gameConfig.text.challengeFailedMessage.replace(
+                                        '{minScore}',
+                                        minScore
+                                    );
+                                    gameOverSubtitle.style.color =
+                                        gameConfig.styles.challengeFailed.subtitleColor;
+                                    logScoreButton.style.display = 'none';
+                                }
+
+                                gameOverScreen.style.display = 'flex';
+
+                                // 播放遊戲結束音效
+                                playSound('gameOver');
+                            }
+                        } else {
+                            // 加分物品
+                            score++;
+
+                            const currentTime = Date.now();
+                            const floatingDuration = gameConfig.styles.floatingText.duration;
+
+                            // 顯示 "開心！" 浮動文字
+                            floatingMessage = {
+                                text: gameConfig.text.catchHappy,
+                                color: gameConfig.styles.floatingText.happyColor,
+                                end: currentTime + floatingDuration,
+                                x: item.x + item.width / 2,
+                                y: item.y
+                            };
+
+                            // 播放接住物品音效
+                            playSound('catchItem');
+                        }
+
+                        items.splice(i, 1);
+                    } else if (item.y > canvas.height) {
+                        items.splice(i, 1);
+                    }
+                }
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                ctx.drawImage(cartImg, cart.x, cart.y, cart.width, cart.height);
+
+                items.forEach(item => {
+                    ctx.drawImage(item.img, item.x, item.y, item.width, item.height);
+                });
+
+                // Draw red flash effect when hit by bad item
+                if (Date.now() < hitEffectEnd) {
+                    const remainingTime = hitEffectEnd - Date.now();
+                    const opacity =
+                        (remainingTime / gameConfig.animations.hitEffect.duration) * 0.8;
+                    // Parse hit effect color from config (supports hex, rgb, rgba)
+                    const hitColor = gameConfig.animations.hitEffect.color;
+                    let r = 255,
+                        g = 0,
+                        b = 0; // default red
+                    if (hitColor.startsWith('#')) {
+                        // Hex format: #RGB or #RRGGBB
+                        const hex = hitColor.slice(1);
+                        if (hex.length === 3) {
+                            r = parseInt(hex[0] + hex[0], 16);
+                            g = parseInt(hex[1] + hex[1], 16);
+                            b = parseInt(hex[2] + hex[2], 16);
+                        } else {
+                            r = parseInt(hex.slice(0, 2), 16);
+                            g = parseInt(hex.slice(2, 4), 16);
+                            b = parseInt(hex.slice(4, 6), 16);
+                        }
+                    } else if (hitColor.startsWith('rgb')) {
+                        // RGB/RGBA format: rgb(r,g,b) or rgba(r,g,b,a)
+                        const match = hitColor.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+                        if (match) {
+                            r = parseInt(match[1], 10);
+                            g = parseInt(match[2], 10);
+                            b = parseInt(match[3], 10);
+                        }
+                    }
+                    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+
+                if (gameStarted) {
+                    drawUI();
+                    drawFloatingMessage();
+                }
+            }
+
+            function drawUI() {
+                const scale = getScaleFactor();
+                
+                // 根據縮放係數調整分數字體大小
+                const baseFontSize = parseInt(gameConfig.ui.score.fontSize);
+                const scaledFontSize = Math.round(baseFontSize * scale);
+                
+                ctx.fillStyle = gameConfig.styles.score.color;
+                ctx.font = `${gameConfig.ui.score.fontWeight} ${scaledFontSize}px ${gameConfig.styles.fonts.family}`;
+                ctx.textAlign = 'left';
+                ctx.fillText(
+                    gameConfig.text.scorePrefix + score,
+                    gameConfig.ui.score.xOffset,
+                    gameConfig.ui.score.yOffset
+                );
+
+                // 根據縮放係數調整生命圖案尺寸
+                const iconSize = Math.round(gameConfig.ui.lives.iconSize * scale);
+                const spacing = iconSize + 5;
+                const startX = canvas.width - spacing;
+                const y = 15;
+
+                for (let i = 0; i < lives; i++) {
+                    const x = canvas.width - spacing * (i + 1);
+
+                    if (livesImg.complete && livesImg.naturalWidth !== 0) {
+                        ctx.drawImage(livesImg, x, y, iconSize, iconSize);
+                    } else {
+                        ctx.fillStyle = gameConfig.ui.lives.color;
+                        const fallbackFontSize = Math.round(36 * scale);
+                        ctx.font = `${fallbackFontSize}px Arial`;
+                        ctx.textAlign = 'right';
+                        ctx.fillText('♥', x + iconSize, y + iconSize);
+                    }
+                }
+            }
+
+            // Draw floating message (開心！ or 哎喲！)
+            function drawFloatingMessage() {
+                if (!floatingMessage || Date.now() > floatingMessage.end) {
+                    floatingMessage = null;
+                    return;
+                }
+
+                const timeRemaining = floatingMessage.end - Date.now();
+                const duration = gameConfig.styles.floatingText.duration;
+
+                // Fade out effect: opacity goes from 1 to 0
+                const opacity = timeRemaining / duration;
+
+                // Slight upward movement effect: move up by 30 pixels over duration
+                const initialY = floatingMessage.y;
+                const travelDistance = 30;
+                const currentY = initialY - travelDistance * (1 - opacity);
+
+                ctx.globalAlpha = opacity;
+                ctx.fillStyle = floatingMessage.color;
+                ctx.font = gameConfig.styles.floatingText.font;
+                ctx.textAlign = 'center';
+                ctx.fillText(floatingMessage.text, floatingMessage.x, currentY);
+                ctx.globalAlpha = 1.0; // Reset alpha for other drawing
+            }
+
+            function gameLoop() {
+                if (!gameStarted) return;
+
+                update();
+                draw();
+
+                requestAnimationFrame(gameLoop);
+            }
+
+            init();
+        </script>
+    </body>
+</html>
